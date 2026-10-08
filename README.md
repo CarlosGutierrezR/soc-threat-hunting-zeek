@@ -1,115 +1,130 @@
-# SOC Threat Hunting — Zeek Beaconing Analysis
+# SOC Threat Hunting — Zeek Beaconing Analysis (SEC-HUNT-001)
 
-Hypothesis-driven threat hunting project using Zeek network telemetry to identify and investigate periodic outbound communication candidates.
+[![CI](https://github.com/CarlosGutierrezR/soc-threat-hunting-zeek/actions/workflows/ci.yml/badge.svg)](https://github.com/CarlosGutierrezR/soc-threat-hunting-zeek/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-## Project status
+Hypothesis-driven threat hunt for command-and-control **beaconing** in Zeek
+`conn` telemetry from a home SOC lab (Security Onion + Wazuh). Connections are
+grouped, inter-arrival times are measured, groups are ranked by timing
+regularity (coefficient of variation), and every candidate gets a documented
+analyst verdict.
 
-Initial hypothesis and repository baseline.
+> **Result:** the hypothesis was investigated and **not confirmed**. The two most
+> periodic groups were legitimate (DHCP and IGMP multicast). Periodicity is a
+> prioritisation signal, not a detection.
 
-No hunting result is claimed yet.
+## TL;DR for reviewers
 
-## Operational problem
+```bash
+git clone https://github.com/CarlosGutierrezR/soc-threat-hunting-zeek.git
+cd soc-threat-hunting-zeek
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt
+pytest                                               # unit + end-to-end tests
+python -m src.cli --input samples/synthetic-conn.jsonl
+```
 
-A SOC may have no conclusive alert indicating command-and-control activity even though compromised endpoints are communicating periodically with external infrastructure.
+No third-party runtime dependencies (standard library only). The bundled
+sample is **synthetic** with known ground truth — see [`samples/README.md`](samples/README.md).
 
-This project investigates whether statistically periodic communication patterns can surface useful hunting candidates without treating periodicity alone as proof of malicious behavior.
+## What this project demonstrates
 
-## Objective
+| Skill | Where |
+|---|---|
+| Hypothesis-driven hunting (scope, guardrails, verdict categories) | [`docs/hypothesis.md`](docs/hypothesis.md) |
+| Statistical beaconing analysis on Zeek data | [`src/features.py`](src/features.py) |
+| Analyst validation and false-positive handling | [`docs/analyst-validation.md`](docs/analyst-validation.md) |
+| Evidence handling (frozen dataset, SHA-256, provenance) | [`evidence/evidence-manifest.md`](evidence/evidence-manifest.md) |
+| Honest reporting of limitations | [`docs/limitations.md`](docs/limitations.md) |
+| Testable, CI-checked Python | [`tests/`](tests), [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
 
-Analyze Zeek connection telemetry, calculate periodicity features, rank candidate communication patterns, enrich them with context, and document an analyst verdict.
+## Hunt summary
 
-## Hunt hypothesis
+| | |
+|---|---|
+| Hypothesis | A compromised endpoint may be beaconing periodically to external infrastructure. |
+| Asset | `WIN11-EP-01` (`10.50.20.22`) |
+| Telemetry | Security Onion / Zeek `conn` (JSONL), frozen snapshot |
+| Dataset | 5,541 events · 5,475 from the endpoint · 13 groups · 7 with ≥ 5 events |
+| Method | Group by destination IP / port / transport → inter-arrival times → mean, population std, CV → rank by ascending CV |
+| Verdict | No malicious beaconing confirmed. Top candidates benign periodic (IGMP `224.0.0.22`, DHCP `10.50.20.254:67/udp`). |
 
-A compromised endpoint may be establishing periodic outbound communications consistent with beaconing behavior.
+Full ranking: [`evidence/candidate-ranking.csv`](evidence/candidate-ranking.csv) ·
+Findings: [`evidence/findings.md`](evidence/findings.md)
 
-See:
+## Workflow
 
-`docs/hypothesis.md`
+```
+Zeek conn.log (JSONL)
+  -> load + validate            src/load.py
+  -> filter source endpoint     src/load.py
+  -> group (dst IP, port, proto) src/features.py
+  -> inter-arrival times, CV    src/features.py
+  -> rank candidates            src/ranking.py
+  -> contextual investigation   docs/analyst-validation.md
+  -> analyst verdict            evidence/findings.md
+```
 
-## Planned data source
+CV = σ(intervals) / μ(intervals). Low CV means regular timing; it does not mean malicious.
 
-Primary:
+## Usage
 
-- Zeek connection telemetry.
+```
+python -m src.cli --input PATH [--source-ip IP] [--min-events N] [--output CSV] [--top N]
+```
 
-Contextual sources may include:
+| Option | Default | Description |
+|---|---|---|
+| `--input` | required | Zeek `conn.log` in JSON Lines format |
+| `--source-ip` | `10.50.20.22` | Originator (`id.orig_h`) to hunt on |
+| `--min-events` | `5` | Minimum connections per group |
+| `--output` | none | Write the full ranking to CSV |
+| `--top` | `20` | Candidates printed to the console |
 
-- Zeek DNS telemetry.
-- Asset information.
-- Protocol and destination port.
-- Connection duration and byte volume.
+Reproduce the SEC-HUNT-001 evidence (requires the raw dataset, which is not in Git):
 
-## Safety and analysis principles
+```bash
+python -m src.cli \
+  --input evidence/raw/sec-hunt-001-zeek-conn-2026-10-08.jsonl \
+  --output evidence/candidate-ranking.csv
+```
 
-- Only authorized SOC lab telemetry will be used.
-- Periodicity alone is not considered evidence of malicious activity.
-- Statistical candidates require analyst validation.
-- Legitimate periodic traffic will be included as comparison data.
-- Findings, false candidates and limitations will be documented.
+Verify the raw file first against the SHA-256 in the
+[evidence manifest](evidence/evidence-manifest.md).
 
-## Planned workflow
+## Repository layout
 
-Zeek telemetry
--> normalization
--> grouping
--> inter-arrival analysis
--> statistical feature calculation
--> candidate ranking
--> contextual investigation
--> analyst verdict
+```
+.
+├── src/                 # pipeline: load, features, ranking, CLI
+├── tests/               # unit tests + end-to-end test on the synthetic sample
+├── samples/             # synthetic Zeek conn sample with ground truth
+├── scripts/             # deterministic sample generator
+├── docs/                # hypothesis, methodology, analyst validation, limitations
+├── evidence/            # derived ranking, findings, evidence manifest (raw/ is git-ignored)
+└── .github/workflows/   # CI: ruff + pytest on Python 3.10 and 3.12
+```
 
-## Repository roadmap
+## Data handling
 
-Planned components:
+- Only authorised SOC lab telemetry was analysed.
+- Raw telemetry (`evidence/raw/`) and packet captures are excluded from Git.
+- The bundled sample is synthetic and uses RFC 5737 documentation addresses for external hosts.
 
-- `docs/` — hypothesis, methodology, validation and limitations.
-- `src/` — loading, feature engineering, ranking and CLI modules.
-- `tests/` — feature and edge-case validation.
-- `samples/` — sanitized Zeek sample data.
-- `evidence/` — findings and candidate ranking evidence.
+## Limitations and next steps
 
-## Current limitations
+Key limitations (details in [`docs/limitations.md`](docs/limitations.md)):
+small groups (5 events) yield deceptively low CV; grouping by port is weak for
+non-TCP/UDP protocols such as IGMP; one endpoint and a short window; no
+malicious ground truth in the lab dataset.
 
-- No dataset has been selected yet.
-- No time window has been defined yet.
-- No ranking algorithm has been implemented yet.
-- No hunting conclusion has been produced yet.
-## SEC-HUNT-001 Results
+Planned next iteration:
 
-SEC-HUNT-001 analyzed Zeek connection telemetry for periodic outbound communication from `WIN11-EP-01`.
+- Controlled beacon in the lab (known ground truth) to measure detection.
+- Add IP-protocol semantics and jitter-tolerant features (e.g. interval histogram / MAD).
+- Enrich with Zeek DNS, byte/duration patterns and asset role.
 
-### Observed dataset
+## License
 
-- 5,541 Zeek connection events
-- 5,475 events originating from the investigated endpoint
-- 13 destination/port/protocol groups
-- 7 groups with at least five observations
-
-The workflow calculates inter-arrival times, mean interval, population standard deviation, and coefficient of variation (CV), then ranks groups by timing regularity.
-
-The strongest periodic candidates were legitimate network/infrastructure traffic, including DHCP. This demonstrates that periodicity is a hunting signal and not a malicious classification by itself.
-
-No malicious beaconing was confirmed in this dataset.
-
-### Run
-
-    python -m src.features
-    python -m src.ranking
-    python -m pytest -q
-
-### Project structure
-
-- `src/load.py` - Zeek JSONL ingestion and source filtering
-- `src/features.py` - grouping and periodicity features
-- `src/ranking.py` - candidate ranking and CSV output
-- `tests/` - automated tests
-- `docs/hypothesis.md` - hunt hypothesis
-- `docs/methodology.md` - methodology
-- `docs/analyst-validation.md` - analyst validation
-- `docs/limitations.md` - limitations
-- `evidence/candidate-ranking.csv` - derived ranking
-- `evidence/findings.md` - findings
-- `evidence/evidence-manifest.md` - evidence provenance
-
-Raw Zeek telemetry is intentionally excluded from Git.
-
+[MIT](LICENSE)
