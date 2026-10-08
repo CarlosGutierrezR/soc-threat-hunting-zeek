@@ -1,46 +1,44 @@
-from pathlib import Path
+"""Zeek conn.log (JSON Lines) ingestion and source filtering."""
+
+from __future__ import annotations
+
 import json
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-DATASET_PATH = (
-    REPO_ROOT / "evidence" / "raw" / "sec-hunt-001-zeek-conn-2026-10-08.jsonl"
-)
+from pathlib import Path
 
 
-def load_events(path: Path) -> list[dict]:
-    events = []
+def load_events(path: Path | str) -> list[dict]:
+    """Load Zeek JSONL events from ``path``.
 
-    with open(path, "r", encoding="utf-8") as archivo:
-        for linea in archivo:
-            linea = linea.strip()
+    Blank lines are ignored. Malformed JSON or non-object lines raise
+    ``ValueError`` with the offending line number so that evidence
+    integrity problems are never silently skipped.
+    """
+    path = Path(path)
+    events: list[dict] = []
 
-            if not linea:
+    with path.open("r", encoding="utf-8-sig") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            line = line.strip()
+            if not line:
                 continue
 
-            event = json.loads(linea)
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"{path}: invalid JSON on line {line_number}: {exc.msg}"
+                ) from exc
+
+            if not isinstance(event, dict):
+                raise ValueError(
+                    f"{path}: line {line_number} is not a JSON object"
+                )
+
             events.append(event)
 
     return events
 
 
 def filter_source(events: list[dict], source_ip: str) -> list[dict]:
-    filtered = []
-
-    for event in events:
-        if event.get("id.orig_h") == source_ip:
-            filtered.append(event)
-
-    return filtered
-
-
-if __name__ == "__main__":
-    events = load_events(DATASET_PATH)
-    win11_events = filter_source(events, "10.50.20.22")
-
-    print(f"Dataset: {DATASET_PATH}")
-    print(f"Eventos cargados: {len(events)}")
-    print(f"Eventos desde 10.50.20.22: {len(win11_events)}")
-
-    if events:
-        print(f"Primer UID: {events[0].get('uid')}")
-        print(f"Último UID: {events[-1].get('uid')}")
+    """Return only events whose originator (``id.orig_h``) is ``source_ip``."""
+    return [event for event in events if event.get("id.orig_h") == source_ip]
