@@ -1,4 +1,4 @@
-﻿# SEC-HUNT-001 Methodology
+# SEC-HUNT-001 Methodology
 
 ## Hunt hypothesis
 
@@ -57,7 +57,15 @@ Every candidate requires analyst validation using protocol, destination, asset a
 
 ## Analyst verdict categories
 
-- benign periodic
-- suspicious
-- confirmed by controlled scenario
-- inconclusive
+- `benign_periodic`
+- `suspicious`
+- `confirmed_by_controlled_scenario`
+- `inconclusive`
+
+## Implementation and reproducibility
+
+- Code: `src/load.py`, `src/features.py`, `src/ranking.py`, CLI in `src/cli.py`.
+- Command used for the evidence ranking:
+  `python -m src.cli --input evidence/raw/sec-hunt-001-zeek-conn-2026-10-08.jsonl --output evidence/candidate-ranking.csv`
+- Method sanity check: `samples/synthetic-conn.jsonl` (synthetic, known ground truth)
+  is exercised by `tests/test_cli.py`. It is not part of the hunt evidence.

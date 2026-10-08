@@ -1,4 +1,4 @@
-﻿# Analyst Validation
+# Analyst Validation
 
 ## Dataset results
 

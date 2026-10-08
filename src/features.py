@@ -1,20 +1,21 @@
-﻿from collections import defaultdict
-from pathlib import Path
+"""Connection grouping and inter-arrival periodicity features."""
+
+from __future__ import annotations
+
+from collections import defaultdict
 from statistics import mean, pstdev
 
-from .load import load_events, filter_source
+DEFAULT_MIN_EVENTS = 5
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-DATASET_PATH = (
-    REPO_ROOT / "evidence" / "raw" / "sec-hunt-001-zeek-conn-2026-10-08.jsonl"
-)
-
-SOURCE_IP = "10.50.20.22"
-MIN_EVENTS = 5
+GroupKey = tuple[str, int, str]
 
 
-def group_connections(events: list[dict]) -> dict[tuple, list[float]]:
-    groups = defaultdict(list)
+def group_connections(events: list[dict]) -> dict[GroupKey, list[float]]:
+    """Group event timestamps by (destination IP, destination port, protocol).
+
+    Events missing any of the required Zeek fields are skipped.
+    """
+    groups: dict[GroupKey, list[float]] = defaultdict(list)
 
     for event in events:
         destination_ip = event.get("id.resp_h")
@@ -22,56 +23,47 @@ def group_connections(events: list[dict]) -> dict[tuple, list[float]]:
         protocol = event.get("proto")
         timestamp = event.get("ts")
 
-        if (
-            destination_ip is None
-            or destination_port is None
-            or protocol is None
-            or timestamp is None
-        ):
+        if None in (destination_ip, destination_port, protocol, timestamp):
             continue
 
-        key = (
-            destination_ip,
-            destination_port,
-            protocol,
+        groups[(destination_ip, destination_port, protocol)].append(
+            float(timestamp)
         )
-
-        groups[key].append(float(timestamp))
 
     return dict(groups)
 
 
 def calculate_intervals(timestamps: list[float]) -> list[float]:
+    """Return inter-arrival times (seconds) of the chronologically sorted input."""
     ordered = sorted(timestamps)
-
-    return [ordered[index] - ordered[index - 1] for index in range(1, len(ordered))]
+    return [later - earlier for earlier, later in zip(ordered, ordered[1:], strict=False)]
 
 
 def calculate_features(
-    groups: dict[tuple, list[float]],
-    min_events: int = MIN_EVENTS,
+    groups: dict[GroupKey, list[float]],
+    min_events: int = DEFAULT_MIN_EVENTS,
 ) -> list[dict]:
+    """Compute periodicity features for groups with at least ``min_events``.
+
+    Features: event count, mean inter-arrival time, population standard
+    deviation and coefficient of variation (CV = std / mean). CV is ``None``
+    when the mean interval is zero (all timestamps identical).
+    """
+    if min_events < 2:
+        raise ValueError("min_events must be >= 2 to compute intervals")
 
     results = []
 
-    for key, timestamps in groups.items():
+    for (destination_ip, destination_port, protocol), timestamps in groups.items():
         if len(timestamps) < min_events:
             continue
 
         intervals = calculate_intervals(timestamps)
-
-        if not intervals:
-            continue
-
         interval_mean = mean(intervals)
         interval_std = pstdev(intervals)
-
-        if interval_mean == 0:
-            coefficient_variation = None
-        else:
-            coefficient_variation = interval_std / interval_mean
-
-        destination_ip, destination_port, protocol = key
+        coefficient_variation = (
+            None if interval_mean == 0 else interval_std / interval_mean
+        )
 
         results.append(
             {
@@ -86,43 +78,3 @@ def calculate_features(
         )
 
     return results
-
-
-if __name__ == "__main__":
-    events = load_events(DATASET_PATH)
-    source_events = filter_source(events, SOURCE_IP)
-
-    groups = group_connections(source_events)
-    features = calculate_features(groups)
-
-    ranked = sorted(
-        features,
-        key=lambda item: (
-            (
-                item["coefficient_variation"]
-                if item["coefficient_variation"] is not None
-                else float("inf")
-            ),
-            -item["event_count"],
-        ),
-    )
-
-    print(f"Dataset events: {len(events)}")
-    print(f"Source events: {len(source_events)}")
-    print(f"Connection groups: {len(groups)}")
-    print(f"Groups with >= {MIN_EVENTS} events: {len(features)}")
-    print()
-    print("Top periodicity candidates:")
-    print()
-
-    for candidate in ranked[:20]:
-        print(
-            f'{candidate["destination_ip"]}:'
-            f'{candidate["destination_port"]}/'
-            f'{candidate["protocol"]} '
-            f'count={candidate["event_count"]} '
-            f'mean={candidate["mean_interval_seconds"]:.2f}s '
-            f'std={candidate["std_interval_seconds"]:.2f}s '
-            f'cv={candidate["coefficient_variation"]:.4f}'
-        )
-

@@ -18,3 +18,10 @@ evidence/raw/
 # OS/editor files
 .DS_Store
 Thumbs.db
+# Tooling
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
