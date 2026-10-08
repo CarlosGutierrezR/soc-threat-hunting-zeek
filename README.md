@@ -74,3 +74,42 @@ Planned components:
 - No time window has been defined yet.
 - No ranking algorithm has been implemented yet.
 - No hunting conclusion has been produced yet.
+## SEC-HUNT-001 Results
+
+SEC-HUNT-001 analyzed Zeek connection telemetry for periodic outbound communication from `WIN11-EP-01`.
+
+### Observed dataset
+
+- 5,541 Zeek connection events
+- 5,475 events originating from the investigated endpoint
+- 13 destination/port/protocol groups
+- 7 groups with at least five observations
+
+The workflow calculates inter-arrival times, mean interval, population standard deviation, and coefficient of variation (CV), then ranks groups by timing regularity.
+
+The strongest periodic candidates were legitimate network/infrastructure traffic, including DHCP. This demonstrates that periodicity is a hunting signal and not a malicious classification by itself.
+
+No malicious beaconing was confirmed in this dataset.
+
+### Run
+
+    python -m src.features
+    python -m src.ranking
+    python -m pytest -q
+
+### Project structure
+
+- `src/load.py` - Zeek JSONL ingestion and source filtering
+- `src/features.py` - grouping and periodicity features
+- `src/ranking.py` - candidate ranking and CSV output
+- `tests/` - automated tests
+- `docs/hypothesis.md` - hunt hypothesis
+- `docs/methodology.md` - methodology
+- `docs/analyst-validation.md` - analyst validation
+- `docs/limitations.md` - limitations
+- `evidence/candidate-ranking.csv` - derived ranking
+- `evidence/findings.md` - findings
+- `evidence/evidence-manifest.md` - evidence provenance
+
+Raw Zeek telemetry is intentionally excluded from Git.
+
