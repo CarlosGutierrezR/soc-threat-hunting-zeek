@@ -69,8 +69,8 @@ This candidate is the required benign false candidate: a naive periodicity-only 
 
 ### Other reviewed groups
 
-- `10.50.10.10:1514/tcp` — periodic communication associated with the Wazuh infrastructure; requires context rather than statistical classification alone.
-- `10.50.30.10:53/udp` — DNS traffic with high volume and substantially greater timing variance.
+- `10.50.10.10:1514/tcp` and `10.50.10.10:1515/tcp` — Wazuh agent connection and enrolment traffic to `SOC-WAZUH-01`; requires context rather than statistical classification alone.
+- `10.50.30.10:53/udp` — DNS to `DC01` (AD DS + DNS for `soclab.test`); high volume, high timing variance, and retries while DC01 was at times unavailable.
 - `239.255.255.250:1900/udp` — multicast traffic requiring protocol context before any verdict.
 - `224.0.0.252:5355/udp` — multicast name-resolution traffic requiring protocol context.
 
