@@ -57,8 +57,6 @@ Categories:
 - `01_platform/` - Security Onion and Elastic platform health
 - `02_telemetry/` - packet visibility, Zeek logs and Elasticsearch ingestion
 - `03_hunt/` - Security Onion Hunt queries and observed events
-- `04_implementation/` - Python implementation evidence
-- `05_git/` - pull request and merge evidence
 - `99_troubleshooting/` - relevant troubleshooting evidence
 
 The screenshots contain lab-only private addressing and do not include the raw Zeek dataset.
